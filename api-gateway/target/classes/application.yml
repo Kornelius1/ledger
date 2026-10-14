@@ -1,0 +1,17 @@
+server:
+  port: 8081
+
+spring:
+  application:
+    name: api-gateway
+  cloud:
+    gateway:
+      routes:
+        - id: ledger-service
+          uri: http://localhost:8082
+          predicates:
+            - Path=/api/v1/transfers/**
+        - id: customer-service
+          uri: http://localhost:8081
+          predicates:
+            - Path=/api/v1/internal/security/**

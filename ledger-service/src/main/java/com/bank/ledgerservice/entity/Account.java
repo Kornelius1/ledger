@@ -1,6 +1,4 @@
-public class Account {
-    
-}
+
 package com.bank.ledgerservice.entity;
 
 import jakarta.persistence.*;

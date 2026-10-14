@@ -1,0 +1,22 @@
+services:
+  postgres-customer:
+    ports:
+      - "127.0.0.1:15432:5432"
+    networks:
+      - data
+      - host-access
+
+  postgres-ledger:
+    ports:
+      - "127.0.0.1:15433:5432"
+    networks:
+      - data
+      - host-access
+
+  redis:
+    ports:
+      - "127.0.0.1:6379:6379"
+
+networks:
+  host-access:
+    driver: bridge

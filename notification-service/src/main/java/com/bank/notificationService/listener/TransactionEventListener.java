@@ -1,4 +1,4 @@
-package com.bank.notificationservice.listener;
+package com.bank.notificationService.listener;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;

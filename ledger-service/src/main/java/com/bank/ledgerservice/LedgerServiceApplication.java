@@ -1,11 +1,12 @@
-package com.bank.notificationservice;
+package com.bank.ledgerservice;
 
 import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
 
 @SpringBootApplication
-public class NotificationServiceApplication {
+public class LedgerServiceApplication {
+
     public static void main(String[] args) {
-        SpringApplication.run(NotificationServiceApplication.class, args);
+        SpringApplication.run(LedgerServiceApplication.class, args);
     }
 }

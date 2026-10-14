@@ -1,18 +1,20 @@
 server:
-  port: 8081
+  port: 8082
 
 spring:
   application:
     name: customer-service
+  config:
+    import: optional:file:../.env/[.properties]
   datasource:
-    url: jdbc:mysql://localhost:/customerdb
+    url: ${SPRING_DATASOURCE_URL:jdbc:postgresql://localhost:15432/db_customer}
     username: customer_admin
-    password: password
-    driver-class-name: com.mysql.cj.jdbc.Driver
+    password: ${CUSTOMER_DB_PASSWORD}
+    driver-class-name: org.postgresql.Driver
   jpa:
     hibernate:
-      ddl-auto: update
-    show-sql: true
+      ddl-auto: update #gunakan validate atau none untuk production
+    show-sql: true #matikan ketika di production
     properties:
       hibernate:
         format_sql: true
