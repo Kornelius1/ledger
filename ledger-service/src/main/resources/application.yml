@@ -7,7 +7,7 @@ spring:
   config:
     import: optional:file:../.env[.properties]
   datasource:
-    url: ${SPRING_DATASOURCE_URL:jdbc:postgresql://localhost:15433/db_ledger}
+    url: ${SPRING_DATASOURCE_URL:jdbc:postgresql://localhost:5434/db_ledger}
     username: ledger_admin
     password: ${LEDGER_DB_PASSWORD}
   data:

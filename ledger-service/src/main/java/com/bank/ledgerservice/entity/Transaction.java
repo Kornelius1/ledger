@@ -46,4 +46,15 @@ public class Transaction {
     public String getIdempotencyKey() { return idempotencyKey; }
     public BigDecimal getAmount() { return amount; }
     public String getStatus() { return status; }
+    public Long getSourceAccountId() {
+    return sourceAccountId;
+}
+
+public Long getDestinationAccountId() {
+    return destinationAccountId;
+}
+
+public OffsetDateTime getCreatedAt() {
+    return createdAt;
+}
 }

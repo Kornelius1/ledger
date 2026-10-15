@@ -19,10 +19,10 @@ public class AccountSecuritySetting {
     @Column(name = "is_frozen", nullable = false)
     private Boolean isFrozen;
 
-    @Column(name = "security_question", nullable = false)
+    @Column(name = "security_question", nullable = true)
     private String securityQuestion;
 
-    @Column(name = "security_answer", nullable = false)
+    @Column(name = "security_answer", nullable = true)
     private String securityAnswer;
 
     // Getters and Setters

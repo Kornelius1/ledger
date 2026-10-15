@@ -7,7 +7,7 @@ services:
       POSTGRES_PASSWORD: ${CUSTOMER_DB_PASSWORD:?CUSTOMER_DB_PASSWORD is required}
     volumes:
       - postgres_customer_data:/var/lib/postgresql/data
-      - ./init-scripts/01-init-customer.sql:/docker-entrypoint-initdb.d/01-init-customer.sql:ro
+      - ./initscript/01-init-script-customer.sql:/docker-entrypoint-initdb.d/01-init-customer.sql:ro
     networks:
       - data
     healthcheck:
@@ -39,7 +39,7 @@ services:
       POSTGRES_PASSWORD: ${LEDGER_DB_PASSWORD:?LEDGER_DB_PASSWORD is required}
     volumes:
       - postgres_ledger_data:/var/lib/postgresql/data
-      - ./init-scripts/02-init-ledger.sql:/docker-entrypoint-initdb.d/02-init-ledger.sql:ro
+      - ./initscript/02-init-script-ledger.sql:/docker-entrypoint-initdb.d/02-init-ledger.sql:ro
     networks:
       - data
     healthcheck:
