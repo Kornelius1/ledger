@@ -2,7 +2,7 @@ package com.bank.ledgerservice.service;
 
 import com.bank.ledgerservice.dto.TransferRequest;
 import com.bank.ledgerservice.dto.TransferResponse;
-import com.bank.ledgerservice.entity.Account;
+import com.bank.ledgerservice.entity.AccountHold;
 import com.bank.ledgerservice.entity.LedgerEntry;
 import com.bank.ledgerservice.entity.Transaction;
 import com.bank.ledgerservice.repository.AccountRepository;
@@ -31,26 +31,28 @@ public class TransferService {
     private static final String PROCESSING = "PROCESSING";
     private static final String SUCCESS = "SUCCESS";
     private static final Duration IDEMPOTENCY_TTL = Duration.ofHours(24);
-
-    private final AccountRepository accountRepository;
+   
     private final TransactionRepository transactionRepository;
     private final LedgerEntryRepository ledgerEntryRepository;
     private final StringRedisTemplate redisTemplate;
     private final KafkaTemplate<String, String> kafkaTemplate;
     private final RestTemplate restTemplate;
+    private final HoldService holdService;
 
     public TransferService(
             AccountRepository accountRepository,
             TransactionRepository transactionRepository,
             LedgerEntryRepository ledgerEntryRepository,
             StringRedisTemplate redisTemplate,
-            KafkaTemplate<String, String> kafkaTemplate) {
+            KafkaTemplate<String, String> kafkaTemplate,
+            HoldService holdService) {
 
-        this.accountRepository = accountRepository;
+    
         this.transactionRepository = transactionRepository;
         this.ledgerEntryRepository = ledgerEntryRepository;
         this.redisTemplate = redisTemplate;
         this.kafkaTemplate = kafkaTemplate;
+        this.holdService = holdService;
         this.restTemplate = new RestTemplate();
     }
 
@@ -67,7 +69,7 @@ public class TransferService {
                 transaction.getDestinationAccountId(),
                 transaction.getAmount());
     }
-
+    
     @Transactional
     public TransferResponse processTransfer(TransferRequest request) {
         validateRequest(request);
@@ -77,104 +79,92 @@ public class TransferService {
 
         Boolean acquired = redisTemplate.opsForValue()
                 .setIfAbsent(redisKey, PROCESSING, IDEMPOTENCY_TTL);
+                
 
         if (Boolean.FALSE.equals(acquired)) {
             return getExistingTransfer(request);
         }
 
-        if (acquired == null) {
-            throw new IllegalStateException("Tidak dapat memastikan status idempotency");
-        }
+        AccountHold hold = null;
 
         try {
-            // 1. Periksa keamanan rekening
-            validateAccountSecurity(request.sourceAccountId());
-            validateAccountSecurity(request.destinationAccountId());
+        // 1. Tahan saldo pengirim selama 30 detik
+        hold = holdService.reserveHold(request.sourceAccountId(), request.amount(), Duration.ofSeconds(30));
 
-            // 2. Kunci kedua rekening dengan urutan ID konsisten
-            List<Long> accountIds = List.of(
-                    request.sourceAccountId(),
-                    request.destinationAccountId()).stream().sorted().toList();
+        // 2. Verifikasi keamanan rekening ke customer-service
+        validateAccountSecurity(request.sourceAccountId());
+        validateAccountSecurity(request.destinationAccountId());
 
-            List<Account> accounts = accountRepository.findAllByIdsForUpdate(accountIds);
+        // 3. Komit transaksi dan update saldo riil
+        holdService.commitHold(hold.getId(), request.destinationAccountId());
 
-            Account source = accounts.stream()
-                    .filter(a -> a.getId().equals(request.sourceAccountId()))
-                    .findFirst()
-                    .orElseThrow(() -> new IllegalArgumentException("Rekening pengirim tidak ditemukan"));
+        // 4. Catat transaksi dan double-entry ledger
+        UUID transactionId = UUID.randomUUID();
+        saveTransactionAndLedger(transactionId, key, request);
 
-            Account destination = accounts.stream()
-                    .filter(a -> a.getId().equals(request.destinationAccountId()))
-                    .findFirst()
-                    .orElseThrow(() -> new IllegalArgumentException("Rekening penerima tidak ditemukan"));
+        // 5. Publikasikan event Kafka
+        publishKafkaEvent(transactionId, request);
 
-            // 3. Pastikan saldo mencukupi
-            if (source.getBalance().compareTo(request.amount()) < 0) {
-                throw new IllegalArgumentException("Saldo tidak mencukupi");
-            }
+        return new TransferResponse(
+                SUCCESS,
+                transactionId,
+                key,
+                request.sourceAccountId(),
+                request.destinationAccountId(),
+                request.amount());
 
-            // 4. Mutasi saldo dalam satu transaksi database
-            source.setBalance(source.getBalance().subtract(request.amount()));
-            destination.setBalance(destination.getBalance().add(request.amount()));
-
-            accountRepository.saveAll(List.of(source, destination));
-
-            // 5. Simpan transaksi dan double-entry ledger
-            UUID transactionId = UUID.randomUUID();
-
-            Transaction transaction = new Transaction(
-                    transactionId,
-                    key,
-                    source.getId(),
-                    destination.getId(),
-                    request.amount(),
-                    SUCCESS);
-
-            transactionRepository.save(transaction);
-
-            ledgerEntryRepository.saveAll(List.of(
-                    new LedgerEntry(
-                            transactionId,
-                            source.getId(),
-                            "DEBIT",
-                            request.amount()),
-                    new LedgerEntry(
-                            transactionId,
-                            destination.getId(),
-                            "CREDIT",
-                            request.amount())));
-
-            // 6. Kirim event hanya setelah database berhasil commit
-            String event = String.format(
-                    "Transfer %s dari %d ke %d sukses",
-                    request.amount(),
-                    source.getId(),
-                    destination.getId());
-
-            TransactionSynchronizationManager.registerSynchronization(
-                    new TransactionSynchronization() {
-                        @Override
-                        public void afterCommit() {
-                            kafkaTemplate.send(
-                                    KAFKA_TOPIC,
-                                    transactionId.toString(),
-                                    event);
-                        }
-                    });
-
-            return new TransferResponse(
-                    SUCCESS,
-                    transactionId,
-                    key,
-                    source.getId(),
-                    destination.getId(),
-                    request.amount());
-
-        } catch (Exception e) {
-            // Hapus kunci Redis jika proses gagal agar tidak tersangkut berstatus PROCESSING
-            redisTemplate.delete(redisKey);
-            throw e;
+    } catch (Exception e) {
+        // Jika saldo sempat ditahan namun proses berikutnya gagal, lepas kembali saldo tertahan tersebut
+        if (hold != null) {
+            holdService.releaseHold(hold.getId());
         }
+        redisTemplate.delete(redisKey);
+        throw e;
+    }
+    }
+
+    private void saveTransactionAndLedger(UUID transactionId, String idempotencyKey, TransferRequest request) {
+        Transaction transaction = new Transaction(
+                transactionId,
+                idempotencyKey,
+                request.sourceAccountId(),
+                request.destinationAccountId(),
+                request.amount(),
+                SUCCESS);
+
+        transactionRepository.save(transaction);
+
+        ledgerEntryRepository.saveAll(List.of(
+                new LedgerEntry(
+                        transactionId,
+                        request.sourceAccountId(),
+                        "DEBIT",
+                        request.amount()),
+                new LedgerEntry(
+                        transactionId,
+                        request.destinationAccountId(),
+                        "CREDIT",
+                        request.amount())));
+    }
+
+    // 4. Tambahkan helper method publishKafkaEvent
+    private void publishKafkaEvent(UUID transactionId, TransferRequest request) {
+        String event = String.format(
+                "Transfer %s dari %d ke %d sukses",
+                request.amount(),
+                request.sourceAccountId(),
+                request.destinationAccountId());
+
+        TransactionSynchronizationManager.registerSynchronization(
+                new TransactionSynchronization() {
+                    @Override
+                    public void afterCommit() {
+                        kafkaTemplate.send(
+                                KAFKA_TOPIC,
+                                transactionId.toString(),
+                                event);
+                    }
+                });
     }
 
     private TransferResponse getExistingTransfer(TransferRequest request) {

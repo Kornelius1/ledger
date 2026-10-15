@@ -1,4 +1,3 @@
-
 package com.bank.ledgerservice.entity;
 
 import jakarta.persistence.*;
@@ -16,16 +15,27 @@ public class Account {
     private String accountNumber;
 
     @Column(nullable = false)
-    private BigDecimal balance;
+    private BigDecimal balance = BigDecimal.ZERO;
+
+    @Column(name = "hold_balance", nullable = false)
+    private BigDecimal holdBalance = BigDecimal.ZERO;
 
     @Column(nullable = false)
-    private String status;
+    private String status = "ACTIVE";
+
+    public Account() {}
 
     public Long getId() { return id; }
-    public String getAccountNumber() { return accountNumber; }
+    
     public BigDecimal getBalance() { return balance; }
-    public String getStatus() { return status; }
-
     public void setBalance(BigDecimal balance) { this.balance = balance; }
-    public void setStatus(String status) { this.status = status; }
+
+    public BigDecimal getHoldBalance() { 
+        return holdBalance == null ? BigDecimal.ZERO : holdBalance; 
+    }
+    public void setHoldBalance(BigDecimal holdBalance) { this.holdBalance = holdBalance; }
+
+    public BigDecimal getAvailableBalance() {
+        return getBalance().subtract(getHoldBalance());
+    }
 }
