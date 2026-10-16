@@ -1,0 +1,84 @@
+// Database Schema for Ledger & Customer Service
+// Platform: dbdiagram.io
+
+Table accounts {
+  id bigint [pk, increment]
+  account_number varchar [unique, not null]
+  balance decimal [not null]
+  hold_balance decimal [not null, default: 0.00]
+  status varchar [not null]
+  created_at timestamp
+}
+
+Table account_holds {
+  id uuid [pk]
+  account_id bigint [not null]
+  amount decimal [not null]
+  status varchar [not null]
+  created_at timestamp
+  expires_at timestamp
+}
+
+Table transactions {
+  id uuid [pk]
+  idempotency_key varchar [unique, not null]
+  source_account_id bigint [not null]
+  destination_account_id bigint [not null]
+  amount decimal [not null]
+  status varchar [not null]
+  created_at timestamp
+}
+
+Table ledger_entries {
+  id bigint [pk, increment]
+  transaction_id uuid [not null]
+  account_id bigint [not null]
+  entry_type varchar [not null]
+  amount decimal [not null]
+  created_at timestamp
+}
+
+Table account_security_settings {
+  id bigint [pk, increment]
+  account_id bigint [unique, not null]
+  is_two_factor_enabled boolean [default: false]
+  is_frozen boolean [default: false]
+}
+
+Table customer_accounts {
+  id bigint [pk, increment]
+  customer_id bigint [not null]
+  account_id bigint [not null]
+  relationship_type varchar
+}
+
+Table customers {
+  id bigint [pk, increment]
+  full_name varchar [not null]
+  nik varchar [unique, not null]
+  phone_number varchar [not null]
+  email varchar [unique, not null]
+  created_at timestamp
+}
+
+// =========================================
+// Relationships (Foreign Keys)
+// =========================================
+
+// Relasi Customer & Account (Many-to-Many via Join Table)
+Ref: customer_accounts.customer_id > customers.id
+Ref: customer_accounts.account_id > accounts.id
+
+// Relasi Account Security (One-to-One)
+Ref: account_security_settings.account_id - accounts.id
+
+// Relasi Account Holds (Many-to-One)
+Ref: account_holds.account_id > accounts.id
+
+// Relasi Transactions & Accounts (Many-to-One)
+Ref: transactions.source_account_id > accounts.id
+Ref: transactions.destination_account_id > accounts.id
+
+// Relasi Ledger Entries (Many-to-One)
+Ref: ledger_entries.transaction_id > transactions.id
+Ref: ledger_entries.account_id > accounts.id
